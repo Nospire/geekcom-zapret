@@ -1,11 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-cd /opt/zapretdeck || { echo "Ошибка: директория /opt/zapretdeck не существует"; exit 1; }
+SCRIPT_DIR="$(realpath "$(dirname "$0")")"
+BASE_DIR="$(realpath "$SCRIPT_DIR/..")"
+LOG_FILE="$BASE_DIR/logs/zapret.log"
 
-LOG_FILE="/opt/zapretdeck/debug.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
 }
+
+log "Остановка nfqws и очистка nftables..."
 
 # Остановка всех процессов nfqws
 log "Остановка всех процессов nfqws..."
@@ -14,14 +19,10 @@ pkill -f "nfqws" && log "Процессы nfqws успешно остановл�
 # Очистка правил nftables
 log "Очистка правил nftables, добавленных скриптом..."
 if nft list table inet zapretunix >/dev/null 2>&1; then
-    nft delete rule inet zapretunix output comment "Added by zapret script" >/dev/null 2>&1 && log "Правила с меткой 'Added by zapret script' удалены"
-    nft flush table inet zapretunix >/dev/null 2>&1
-    nft delete table inet zapretunix >/dev/null 2>&1 && log "Таблица inet zapretunix и цепочка output удалены"
+    nft flush table inet zapretunix >/dev/null 2>&1 || true
+    nft delete table inet zapretunix >/dev/null 2>&1 && log "Таблица inet zapretunix удалена"
 else
     log "Таблица inet zapretunix не найдена. Нечего очищать."
 fi
 
-# Отключение DNS
-log "Отключение DNS..."
-/opt/zapretdeck/dns.sh reset
 log "Очистка завершена"
