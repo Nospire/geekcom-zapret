@@ -55,7 +55,7 @@ trap _term SIGINT SIGTERM EXIT
 default_strategy() {
     local f
 
-    # Сначала пробуем general*.bat
+    # Сначала general*.bat
     f=$(find "$REPO_DIR" -maxdepth 1 -type f -name "general*.bat" | sort | head -n1 || true)
     if [ -n "${f:-}" ]; then
         basename "$f"
