@@ -1,28 +1,45 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-SCRIPT_DIR="$(realpath "$(dirname "$0")")"
-BASE_DIR="$(realpath "$SCRIPT_DIR/..")"
-LOG_FILE="$BASE_DIR/logs/zapret.log"
-
-mkdir -p "$(dirname "$LOG_FILE")"
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="$BASE_DIR/logs"
+LOG_FILE="$LOG_DIR/zapret.log"
 
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+    local msg="$1"
+    mkdir -p "$LOG_DIR"
+    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$msg" | tee -a "$LOG_FILE"
 }
 
 log "Остановка nfqws и очистка nftables..."
 
-# Остановка всех процессов nfqws
-log "Остановка всех процессов nfqws..."
-pkill -f "nfqws" && log "Процессы nfqws успешно остановлены" || log "Процессы nfqws не найдены"
+# Остановка nfqws
+if pgrep -f "nfqws" >/dev/null 2>&1; then
+    sudo pkill -f "nfqws" || true
+    log "Процессы nfqws остановлены"
+else
+    log "Процессы nfqws не найдены"
+fi
 
-# Очистка правил nftables
-log "Очистка правил nftables, добавленных скриптом..."
-if nft list table inet zapretunix >/dev/null 2>&1; then
-    nft flush table inet zapretunix >/dev/null 2>&1 || true
-    nft delete table inet zapretunix >/dev/null 2>&1 && log "Таблица inet zapretunix удалена"
+# Очистка nftables
+if sudo nft list table inet zapretunix >/dev/null 2>&1; then
+    # Удаляем правило по комментарию (если есть)
+    sudo nft delete rule inet zapretunix output comment "Added by geekcom-zapret" >/dev/null 2>&1 || true
+
+    # Чистим и удаляем цепочку output
+    sudo nft flush chain inet zapretunix output >/dev/null 2>&1 || true
+    sudo nft delete chain inet zapretunix output >/dev/null 2>&1 || true
+
+    # Удаляем таблицу
+    sudo nft delete table inet zapretunix >/dev/null 2>&1 || true
+
+    if ! sudo nft list table inet zapretunix >/dev/null 2>&1; then
+        log "Таблица inet zapretunix полностью удалена"
+    else
+        log "Внимание: таблица inet zapretunix всё ещё существует, проверьте вручную"
+    fi
 else
     log "Таблица inet zapretunix не найдена. Нечего очищать."
 fi
 
-log "Очистка завершена"
+log "Остановка и очистка завершены"
