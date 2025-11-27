@@ -153,7 +153,7 @@ parse_bat_file() {
         # Комментарии / пустые строки
         [[ "$line" =~ ^[[:space:]]*:: || -z "$line" ]] && continue
 
-        # Строки с GameFilter сейчас не используем
+        # GameFilter сейчас не используем (игровые профили отдельно потом разрулим)
         if [[ "$line" == *"%GameFilter%"* ]]; then
             debug_log "Skipping GameFilter-specific line"
             continue
@@ -172,7 +172,7 @@ parse_bat_file() {
             nfqws_args="${nfqws_args//%LISTS%/lists/}"
             # Убираем символы продолжения строк Windows (^)
             nfqws_args="${nfqws_args//^/}"
-            # Убираем viсячую запятую в конце портов, типа "443,"
+            # Убираем висящую запятую в конце портов, типа "443,"
             ports="${ports%,}"
 
             # Наш nfqws не понимает L7-фильтры из этого комплекта
@@ -181,8 +181,14 @@ parse_bat_file() {
                 continue
             fi
 
-            # Наш nfqws не понимает multisplit — выкидываем его, оставляем fake
+            # nfqws не знает "fake,multisplit" — оставляем просто fake
             nfqws_args="${nfqws_args//fake,multisplit/fake}"
+
+            # nfqws не знает "fakedsplit" — маппим на fake,split
+            nfqws_args="${nfqws_args//fakedsplit/fake,split}"
+
+            # nfqws не знает hostlist-domains — вырезаем целиком этот флаг
+            nfqws_args="$(printf '%s\n' "$nfqws_args" | sed 's/--hostlist-domains=[^ ]*//g')"
 
             nft_rules+=("$protocol dport {$ports} counter queue num $queue_num bypass")
             nfqws_params+=("$nfqws_args")
