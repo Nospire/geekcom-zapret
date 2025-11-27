@@ -9,23 +9,25 @@ LOG_FILE="$LOG_DIR/debug.log"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
 }
 
 log "Остановка nfqws и очистка nftables..."
 
 # Остановка всех процессов nfqws
-log "Остановка всех процессов nfqws..."
-pkill -f "nfqws" && log "Процессы nfqws успешно остановлены" || log "Процессы nfqws не найдены"
+if pgrep -f "nfqws" >/dev/null 2>&1; then
+    pkill -f "nfqws" && log "Процессы nfqws остановлены"
+else
+    log "Процессы nfqws не найдены"
+fi
 
-# Очистка правил nftables
-log "Очистка правил nftables, добавленных скриптом..."
+# Очистка таблицы inet zapretunix
 if nft list table inet zapretunix >/dev/null 2>&1; then
-    nft delete rule inet zapretunix output comment "Added by zapret script" >/dev/null 2>&1 || true
+    log "Удаляю таблицу inet zapretunix..."
     nft flush table inet zapretunix >/dev/null 2>&1 || true
     nft delete table inet zapretunix >/dev/null 2>&1 && log "Таблица inet zapretunix удалена"
 else
-    log "Таблица inet zapretunix не найдена. Нечего очищать."
+    log "Таблица inet zapretunix не найдена, нечего чистить"
 fi
 
 log "Очистка завершена"
