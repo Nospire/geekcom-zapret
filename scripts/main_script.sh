@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Базовые каталоги (работаем из структуры:
+# Базовые каталоги:
 # ROOT/
 #   bin/nfqws
 #   scripts/*.sh
@@ -17,11 +17,9 @@ STOP_SCRIPT="$SCRIPT_DIR/stop_and_clean_nft.sh"
 LOG_DIR="$ROOT_DIR/logs"
 LOG_FILE="$LOG_DIR/debug.log"
 
-# Флаги
 DEBUG=false
 NOINTERACTIVE=false
 
-# Ловим завершение, аккуратно чистим nft + nfqws
 _term() {
     if [[ -x "$STOP_SCRIPT" ]]; then
         sudo /usr/bin/env bash "$STOP_SCRIPT" 2>&1 | while read -r line; do log "stop_script: $line"; done
@@ -31,7 +29,6 @@ _term() {
 }
 trap _term SIGINT SIGTERM EXIT
 
-# Логирование
 log() {
     mkdir -p "$LOG_DIR" 2>/dev/null || true
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
@@ -48,7 +45,6 @@ handle_error() {
     exit 1
 }
 
-# Минимальный набор зависимостей: git больше не нужен
 check_dependencies() {
     local deps=("nft" "grep" "sed")
     for dep in "${deps[@]}"; do
@@ -58,7 +54,6 @@ check_dependencies() {
     done
 }
 
-# Чтение/создание конфигурации
 load_config() {
     mkdir -p "$(dirname "$CONF_FILE")" 2>/dev/null || true
 
@@ -73,7 +68,6 @@ load_config() {
         if [ -z "$strategy" ]; then
             handle_error "Не найден ни один .bat файл в $REPO_DIR"
         fi
-        # dns оставляем в конфиге как поле, но движок его больше не использует
         echo -e "interface=$interface\nauto_update=false\nstrategy=$strategy\ndns=disabled" > "$CONF_FILE"
     else
         # shellcheck disable=SC1090
@@ -90,7 +84,6 @@ load_config() {
     debug_log "Загружено из conf.env: interface=$interface, strategy=$strategy, dns=${dns:-}"
 }
 
-# Репозиторий мы больше не клонируем, только проверяем наличие локального набора .bat
 setup_repository() {
     if [ ! -d "$REPO_DIR" ]; then
         handle_error "Каталог с .bat профилями не найден: $REPO_DIR. Скопируйте zapret-latest сюда вручную."
@@ -103,7 +96,7 @@ find_bat_files() {
     find "$REPO_DIR" -maxdepth 1 -type f -name "$pattern"
 }
 
-# Глобальные массивы под nft и nfqws
+# Глобальные массивы
 nft_rules=()
 nfqws_params=()
 
@@ -157,8 +150,16 @@ parse_bat_file() {
     while IFS= read -r line; do
         debug_log "Processing line: $line"
 
+        # Комментарии / пустые строки
         [[ "$line" =~ ^[[:space:]]*:: || -z "$line" ]] && continue
 
+        # Строки с GameFilter нам сейчас не нужны (игровые порты, не критично для обхода DPI)
+        if [[ "$line" == *"%GameFilter%"* ]]; then
+            debug_log "Skipping GameFilter-specific line"
+            continue
+        fi
+
+        # Подставляем пути
         line="${line//%BIN%/$bin_path}"
         line="${line//%GameFilter/}"
 
@@ -167,7 +168,19 @@ parse_bat_file() {
             local ports="${BASH_REMATCH[2]}"
             local nfqws_args="${BASH_REMATCH[3]}"
 
+            # Нормализуем пути списков
             nfqws_args="${nfqws_args//%LISTS%/lists/}"
+            # Убираем символы продолжения строк Windows (^)
+            nfqws_args="${nfqws_args//^/}"
+
+            # Убираем висящую запятую в конце портов, типа "443,"
+            ports="${ports%,}"
+
+            # Наш nfqws под Linux не умеет filter-l7, такие очереди пропускаем
+            if [[ "$nfqws_args" == *"--filter-l7="* ]]; then
+                debug_log "Skipping unsupported l7 rule: $nfqws_args"
+                continue
+            fi
 
             nft_rules+=("$protocol dport {$ports} counter queue num $queue_num bypass")
             nfqws_params+=("$nfqws_args")
@@ -262,7 +275,6 @@ main() {
             echo "Неверный выбор. Попробуйте еще раз."
         done
 
-        # Обновляем конфиг выбранным интерфейсом
         echo -e "interface=$interface\nauto_update=${auto_update:-false}\nstrategy=$strategy\ndns=${dns:-disabled}" > "$CONF_FILE"
     fi
 
